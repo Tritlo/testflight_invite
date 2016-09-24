@@ -46,22 +46,25 @@
 # THE SOFTWARE.
 
 import json
-import urllib
-import urllib2
-import cookielib
+import urllib.request as urllib2
+import http.cookiejar as cookielib
 import re
 import sys
 import os
 from getpass import getpass
 
+
 class ITCException(Exception):
-    def __init__(self,value):
+    def __init__(self, value):
         self.value = value
+
     def __str__(self):
-        return repr(self.value);
+        return repr(self.value)
+
 
 class TFInviteDuplicateException(Exception):
     pass
+
 
 # There is an issue with Python 2.5 where it assumes the 'version'
 # cookie value is always interger.  However, itunesconnect.apple.com
@@ -76,7 +79,9 @@ class MyCookieJar(cookielib.CookieJar):
         if version is not None:
             version = version.replace('"', '')
             standard["version"] = version
-        return cookielib.CookieJar._cookie_from_cookie_tuple(self, tup, request)
+        return cookielib.CookieJar._cookie_from_cookie_tuple(self, tup,
+                                                             request)
+
 
 class TestFlightInvite:
     urlITCBase = 'https://itunesconnect.apple.com%s'
@@ -95,15 +100,16 @@ class TestFlightInvite:
         return urlHandle.read()
 
     def createOpener(self):
-        handlers = []                                                       # proxy support
-        if self.proxy:                                                      # proxy support
-            handlers.append(urllib2.ProxyHandler({"https": self.proxy}))    # proxy support
+        handlers = []  # proxy support
+        if self.proxy:  # proxy support
+            handlers.append(urllib2.ProxyHandler(
+                {"https": self.proxy}))  # proxy support
 
-        cj = MyCookieJar();
+        cj = MyCookieJar()
         cj.set_policy(cookielib.DefaultCookiePolicy(rfc2965=True))
         cjhdr = urllib2.HTTPCookieProcessor(cj)
-        handlers.append(cjhdr)                                              # proxy support
-        return urllib2.build_opener(*handlers)                              # proxy support
+        handlers.append(cjhdr)  # proxy support
+        return urllib2.build_opener(*handlers)  # proxy support
 
     @property
     def service_key(self):
@@ -111,18 +117,16 @@ class TestFlightInvite:
             return self._service_key
 
         jsUrl = self.urlITCBase % '/itc/static-resources/controllers/login_cntrl.js'
-        content = self.readData(jsUrl)
+        content = self.readData(jsUrl).decode('utf8')
         matches = re.search(r"itcServiceKey = '(.*)'", content)
         if not matches:
             raise ValueError('Unable to find iTunes Connect Service key')
         return matches.group(1)
 
     def login(self):
-        data = {
-            'accountName': self.itcLogin,
-            'password': self.itcPassword,
-            'rememberMe': 'false'
-        }
+        data = {'accountName': self.itcLogin,
+                'password': self.itcPassword,
+                'rememberMe': 'false'}
         headers = {
             'Content-Type': 'application/json',
             'X-Requested-With': 'XMLHttpRequest',
@@ -131,62 +135,64 @@ class TestFlightInvite:
 
         loginUrl = 'https://idmsa.apple.com/appleauth/auth/signin?widgetKey=%s' % self.service_key
         self.readData(
-            'https://idmsa.apple.com/appleauth/auth/signin?widgetKey=%s' % self.service_key,
-            data=json.dumps(data),
-            headers=headers
-        )
-        self.readData("https://itunesconnect.apple.com/WebObjects/iTunesConnect.woa/wa/route?noext")
-        self.readData("https://itunesconnect.apple.com/WebObjects/iTunesConnect.woa")    
+            'https://idmsa.apple.com/appleauth/auth/signin?widgetKey=%s' %
+            self.service_key,
+            data=json.dumps(data).encode('utf8'),
+            headers=headers)
+        self.readData(
+            "https://itunesconnect.apple.com/WebObjects/iTunesConnect.woa/wa/route?noext")
+        self.readData(
+            "https://itunesconnect.apple.com/WebObjects/iTunesConnect.woa")
 
     def numTesters(self):
         self.login()
         endpoint = '/WebObjects/iTunesConnect.woa/ra/user/externalTesters/%s/' % self.appId
         urlWebsiteExternalTesters = self.urlITCBase % endpoint
         externalResponse = self.readData(
-            "https://itunesconnect.apple.com/WebObjects/iTunesConnect.woa/ra/user/externalTesters/%s/" % self.appId,
-            headers={'Content-Type': 'application/json'}
-        )
-        data = json.loads(externalResponse)
+            "https://itunesconnect.apple.com/WebObjects/iTunesConnect.woa/ra/user/externalTesters/%s/"
+            % self.appId,
+            headers={'Content-Type': 'application/json'})
+        data = json.loads(externalResponse.decode('utf8'))
         return len(data['data']['users'])
 
     def addTester(self, email, firstname='', lastname=''):
         self.login()
         params = {
-            'users': [
-                {
-                    'emailAddress': {
-                        'value': email
-                    },
-                    'firstName': {
-                        'value': firstname
-                    },
-                    'lastName': {
-                        'value': lastname
-                    },
-                    'testing': {
-                        'value': 'true'
-                    }
+            'users': [{
+                'emailAddress': {
+                    'value': email
+                },
+                'firstName': {
+                    'value': firstname
+                },
+                'lastName': {
+                    'value': lastname
+                },
+                'testing': {
+                    'value': 'true'
                 }
-            ]
+            }]
         }
         try:
             return self.readData(
-                'https://itunesconnect.apple.com/WebObjects/iTunesConnect.woa/ra/user/externalTesters/%s/' % self.appId,
-                json.dumps(params),
-                headers={'Content-Type': 'application/json'}
-            )
+                'https://itunesconnect.apple.com/WebObjects/iTunesConnect.woa/ra/user/externalTesters/%s/'
+                % self.appId,
+                json.dumps(params).encode('utf8'),
+                headers={'Content-Type': 'application/json'})
         except urllib2.HTTPError as e:
-            if e.code == 500: # 500 if tester already exists... This is not how you HTTP, Apple.
+            if e.code == 500:  # 500 if tester already exists... This is not how you HTTP, Apple.
                 raise TFInviteDuplicateException
             raise
-            
+
+
 def usage():
     print 'Usage: %s <iTC login email> <App ID> <Invitee Email> <Invitee First Name (Optional)> <Invitee Last Name (Optional)'
+
 
 def main():
     if len(sys.argv) < 4:
         usage()
-        return -1 
+        return -1
 
     itcLogin = sys.argv[1]
 
@@ -220,6 +226,6 @@ def main():
         print 'Invite Failed: %s' % str(e)
         return -3
 
+
 if __name__ == '__main__':
     sys.exit(main())
-
